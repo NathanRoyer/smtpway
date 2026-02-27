@@ -1,0 +1,3 @@
+openssl genpkey -algorithm RSA -out examples/pkey.pem
+openssl req -new -key examples/pkey.pem -out examples/csr.pem
+openssl req -x509 -days 365 -key examples/pkey.pem -in examples/csr.pem -outform der -out examples/cert.der
