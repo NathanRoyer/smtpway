@@ -82,18 +82,20 @@ impl<H: Handler> SmtpServer<H> {
             self.read_line().await?;
 
             match self.in_line.as_str() {
-                "STARTTLS" => self.run_tls().await?,
+                "STARTTLS" => {
+                    conn_write!(self, "220 Ready to start TLS\r\n");
+                    self.upgrade().await?;
+                },
                 _other => self.handle_cmd().await?,
             }
         }
     }
 
-    async fn run_tls(&mut self) -> Result<(), Error> {
-        conn_write!(self, "220 Ready to start TLS\r\n");
+    async fn upgrade(&mut self) -> Result<(), Error> {
         let stream = replace(&mut self.stream, Stream::None);
 
         let Stream::Tcp(tcp_stream) = stream else {
-            unreachable!("cannot upgrade a TLS connection");
+            return Err(Error::AlreadyTls);
         };
 
         let Ok(tls_stream) = self.tls_acceptor.accept(tcp_stream).await else {
@@ -101,15 +103,7 @@ impl<H: Handler> SmtpServer<H> {
         };
 
         self.stream = Stream::Tls(tls_stream);
-
-        loop {
-            self.read_line().await?;
-
-            match self.in_line.as_str() {
-                "STARTTLS" => Err(Error::AlreadyTls)?,
-                _other => self.handle_cmd().await?,
-            }
-        }
+        Ok(())
     }
 
     async fn handle_cmd(&mut self) -> Result<(), Error> {
@@ -286,6 +280,7 @@ pub async fn session<H: Handler>(
     tls_config: Arc<ServerConfig>,
     hostname: String,
     handler: H,
+    smtps: bool,
 ) {
     let mut server = SmtpServer {
         tls_acceptor: TlsAcceptor::from(tls_config),
@@ -300,6 +295,12 @@ pub async fn session<H: Handler>(
         in_line: String::new(),
         in_buf: Vec::new(),
     };
+
+    if smtps {
+        if let Err(error) = server.upgrade().await {
+            println!("smtps error: {error:?}");
+        }
+    }
 
     let Err(error) = server.run().await else {
         unreachable!();

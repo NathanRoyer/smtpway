@@ -20,7 +20,7 @@ impl Handler for LoggingHandler {
     }
 }
 
-async fn run(exec: Arc<Executor>, tls_config: Arc<ServerConfig>, port: u16) {
+async fn run(exec: Arc<Executor>, tls_config: Arc<ServerConfig>, port: u16, smtps: bool) {
     let addr = ("0.0.0.0", port);
     let listener = TcpListener::bind(addr).await.unwrap();
     let mut incoming = listener.incoming();
@@ -30,7 +30,7 @@ async fn run(exec: Arc<Executor>, tls_config: Arc<ServerConfig>, port: u16) {
         let tls_config = tls_config.clone();
         let hostname = "localhost".to_string();
 
-        let new_task = session(stream, tls_config, hostname, LoggingHandler);
+        let new_task = session(stream, tls_config, hostname, LoggingHandler, smtps);
 
         exec.spawn(new_task);
     }
@@ -48,10 +48,12 @@ fn main() {
 
     let tls_config = Arc::new(tls_config);
 
-    let srv_25 = run(exec.clone(), tls_config.clone(), 25);
-    let srv_587 = run(exec.clone(), tls_config.clone(), 587);
+    let srv_25 = run(exec.clone(), tls_config.clone(), 25, false);
+    let srv_465 = run(exec.clone(), tls_config.clone(), 465, true);
+    let srv_587 = run(exec.clone(), tls_config.clone(), 587, false);
 
     exec.spawn(srv_25);
+    exec.spawn(srv_465);
     exec.spawn(srv_587);
 
     let _ = Executor::join_arc(exec);
